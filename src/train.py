@@ -97,6 +97,20 @@ class CombinedLoss(nn.Module):
                 target = F.interpolate(target.unsqueeze(1).float(), size=pred.shape[2:], mode='nearest').squeeze(1).long()
             return self.alpha * self.ce(pred, target) + (1 - self.alpha) * self.dice(pred, target)
 
+def get_device(device_name):
+    if device_name == 'cuda':
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA device requested but CUDA is not available")
+        return torch.device('cuda')
+    elif device_name == 'mps':
+        if not torch.backends.mps.is_available():
+            raise RuntimeError("MPS device requested but MPS is not available")
+        return torch.device('mps')
+    elif device_name == 'cpu':
+        return torch.device('cpu')
+    else:
+        raise ValueError(f"Unknown device: {device_name}. Choose from: cuda, mps, cpu")
+
 def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler, num_epochs, device, experiment_dir, patience=7):
     os.makedirs(experiment_dir, exist_ok=True)
     early_stopping = EarlyStopping(patience=patience, verbose=True)
@@ -185,17 +199,27 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
     return history
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--train_dir', type=str, default='/Users/nuno/programação/tese/cromossomas/train_labelme')
-    parser.add_argument('--val_dir', type=str, default='/Users/nuno/programação/tese/cromossomas/test_labelme')
+    parser = argparse.ArgumentParser(description='Train Semantic Segmentation Model')
+    parser.add_argument('--train_dir', type=str, default='/Users/nuno/programação/tese/cromossomas/train_labelme',
+                      help='Directory containing training data')
+    parser.add_argument('--val_dir', type=str, default='/Users/nuno/programação/tese/cromossomas/test_labelme',
+                      help='Directory containing validation data')
     parser.add_argument('--model_type', type=str, default='enhanced_unet', 
                       choices=['enhanced_unet', 'deeplabv3', 'segformer'],
                       help='Type of model to use')
-    parser.add_argument('--img_size', type=int, default=256)
-    parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--num_epochs', type=int, default=100)
-    parser.add_argument('--learning_rate', type=float, default=0.001)
-    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--device', type=str, default='cpu', 
+                      choices=['cuda', 'mps', 'cpu'],
+                      help='Device to use for training (cuda/mps/cpu)')
+    parser.add_argument('--img_size', type=int, default=256,
+                      help='Size of input images')
+    parser.add_argument('--batch_size', type=int, default=8,
+                      help='Batch size for training')
+    parser.add_argument('--num_epochs', type=int, default=100,
+                      help='Number of training epochs')
+    parser.add_argument('--learning_rate', type=float, default=0.001,
+                      help='Initial learning rate')
+    parser.add_argument('--patience', type=int, default=10,
+                      help='Patience for early stopping')
     args = parser.parse_args()
     
     # Create experiment directory
@@ -207,8 +231,19 @@ def main():
     with open(os.path.join(experiment_dir, 'config.json'), 'w') as f:
         json.dump(vars(args), f, indent=4)
     
-    device = torch.device('mps')
-    print(f"Using device: {device}")
+    # Set up device with error handling
+    try:
+        device = get_device(args.device)
+        print(f"Using device: {device}")
+    except RuntimeError as e:
+        print(f"Warning: {str(e)}")
+        print("Falling back to CPU device")
+        device = torch.device('cpu')
+        args.device = 'cpu'  # Update config to reflect the change
+    
+    # Update config file with final device selection
+    with open(os.path.join(experiment_dir, 'config.json'), 'w') as f:
+        json.dump(vars(args), f, indent=4)
     
     # Create datasets
     train_dataset = ChromosomeDataset(
@@ -225,20 +260,21 @@ def main():
     print(f"Number of training samples: {len(train_dataset)}")
     print(f"Number of validation samples: {len(val_dataset)}")
     
-    # Create data loaders
+    # Create data loaders with device-specific settings
+    num_workers = 0 if args.device == 'mps' else 4  # MPS can be unstable with multiple workers
     train_loader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=4,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True if args.device != 'cpu' else False
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=4,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True if args.device != 'cpu' else False
     )
     
     # Initialize model, criterion, optimizer and scheduler
@@ -250,9 +286,9 @@ def main():
     optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=0.01)
     scheduler = CosineAnnealingWarmRestarts(
         optimizer,
-        T_0=10,  # Restart every 10 epochs
-        T_mult=2,  # Double the restart interval after each restart
-        eta_min=1e-6  # Minimum learning rate
+        T_0=10,
+        T_mult=2,
+        eta_min=1e-6
     )
     
     # Train the model

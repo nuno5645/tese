@@ -19,6 +19,20 @@ def load_model(model_path, device, model_type='enhanced_unet'):
     model.eval()
     return model
 
+def get_device(device_name):
+    if device_name == 'cuda':
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA device requested but CUDA is not available")
+        return torch.device('cuda')
+    elif device_name == 'mps':
+        if not torch.backends.mps.is_available():
+            raise RuntimeError("MPS device requested but MPS is not available")
+        return torch.device('mps')
+    elif device_name == 'cpu':
+        return torch.device('cpu')
+    else:
+        raise ValueError(f"Unknown device: {device_name}. Choose from: cuda, mps, cpu")
+
 def preprocess_image(image_path, transform):
     # Load and transform image
     image = Image.open(image_path)
@@ -198,31 +212,30 @@ def visualize_results(original_image, class_predictions, probabilities, json_pat
     return colored_mask, pred_overlay
 
 def main():
-    # Parse arguments
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--model_path', type=str, required=True, help='Path to trained model')
+    parser = argparse.ArgumentParser(description='Semantic Segmentation Inference')
     parser.add_argument('--image_path', type=str, required=True, help='Path to input image')
-    parser.add_argument('--output_dir', type=str, default='outputs', help='Directory to save outputs')
-    parser.add_argument('--model_type', type=str, default='enhanced_unet',
-                      choices=['enhanced_unet', 'deeplabv3', 'segformer'],
-                      help='Type of model to use')
+    parser.add_argument('--model_path', type=str, required=True, help='Path to model checkpoint')
+    parser.add_argument('--model_type', type=str, default='enhanced_unet', help='Type of model to use')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'mps', 'cpu'], 
+                      help='Device to run inference on (cuda/mps/cpu)')
+    parser.add_argument('--output_path', type=str, help='Path to save visualization')
+    parser.add_argument('--json_path', type=str, help='Path to class mapping JSON file')
+    
     args = parser.parse_args()
     
-    # Create output directory if it doesn't exist
-    os.makedirs(args.output_dir, exist_ok=True)
-    
-    # Set device
-    device = torch.device('mps')
-    print(f"Using device: {device}")
+    try:
+        device = get_device(args.device)
+    except RuntimeError as e:
+        print(f"Error: {str(e)}")
+        print("Falling back to CPU device")
+        device = torch.device('cpu')
     
     # Load model
     model = load_model(args.model_path, device, args.model_type)
-    print(f"\nModel Parameters:")
-    print(model.get_parameters())
     
-    # Get transform
-    transform = get_transform(mode='val', img_size=256)
+    # Get transforms
+    transform = get_transform(train=False)
     
     # Preprocess image
     image_tensor, original_size, resized_original = preprocess_image(args.image_path, transform)
@@ -230,15 +243,9 @@ def main():
     # Get predictions
     class_predictions, probabilities = predict_mask(model, image_tensor, device)
     
-    # Get corresponding JSON path
-    json_path = os.path.splitext(args.image_path)[0] + '.json'
-    
     # Visualize and save results
-    output_path = os.path.join(args.output_dir, f'prediction_{args.model_type}.png')
-    colored_mask, overlay = visualize_results(resized_original, class_predictions, probabilities, 
-                                            json_path=json_path, save_path=output_path)
-    
-    print(f"Results saved to {output_path}")
+    visualize_results(resized_original, class_predictions, probabilities, 
+                     args.json_path, args.output_path)
 
 if __name__ == '__main__':
     main()
