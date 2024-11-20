@@ -12,9 +12,8 @@ import json
 from datetime import datetime
 import torch.nn.functional as F
 
-from dataset import ChromosomeDataset, get_transform
-from models import get_model
-
+from data.dataset import ChromosomeDataset, get_transform
+from models.models import get_model
 class EarlyStopping:
     def __init__(self, patience=7, min_delta=0, verbose=True):
         self.patience = patience
