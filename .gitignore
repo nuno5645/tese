@@ -1,0 +1,50 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment (if you create one)
+venv/
+env/
+.env
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+*.ipynb
+
+# Model checkpoints and large files
+*.pth
+checkpoints/
+outputs/
+results/
+
+# Data directories
+54816/
+cromossomas/
+segment-anything-2/
+
+# Downloaded or generated data
+*.webp
+*.jpg
+*.png
+*.pdf
+*.crdownload
+*.txt
+!requirements.txt
+
+# Experiment and test results
+experiments/
+tests/
+
+# Keep specific important files
+!README.md
+!requirements.txt
+
+# Project specific
+refer|encias_tese/  # References directory
