@@ -14,6 +14,7 @@ import torch.nn.functional as F
 
 from data.dataset import ChromosomeDataset, get_transform
 from models.models import get_model
+
 class EarlyStopping:
     def __init__(self, patience=7, min_delta=0, verbose=True):
         self.patience = patience
@@ -75,6 +76,9 @@ class CombinedLoss(nn.Module):
         self.dice = DiceLoss()
         
     def forward(self, pred, target):
+        # Ensure target is of type Long
+        target = target.long()
+        
         if isinstance(pred, tuple):
             # Handle deep supervision
             main_pred, *aux_preds = pred
